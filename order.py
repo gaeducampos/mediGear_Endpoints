@@ -80,3 +80,4 @@ class FinalOrder(BaseModel):
     total: float
     deliveryTime: str
     orderDetails: List[FinalOrderDetails]
+    location: str

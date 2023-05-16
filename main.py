@@ -4,6 +4,7 @@ from pydantic import BaseModel
 import io
 import uuid
 from order import *
+from user import *
 from orderDetails import *
 from product import *
 from pydantic.generics import GenericModel
@@ -128,7 +129,8 @@ async def get_user_order_pending(user_id: int):
                             status=order.attributes.status,
                             total=order.attributes.total,
                             deliveryTime=order.attributes.deliveryTime,
-                            orderDetails=final_order_details)
+                            orderDetails=final_order_details,
+                            location=order.attributes.location)
 
                         user_order.append(final_order)
 
@@ -174,7 +176,8 @@ async def get_active_orders(user_id):
                             status=order.attributes.status,
                             total=order.attributes.total,
                             deliveryTime=order.attributes.deliveryTime,
-                            orderDetails=final_order_details)
+                            orderDetails=final_order_details,
+                            location=order.attributes.location)
 
                         user_order.append(final_order)
     return user_order
@@ -195,6 +198,7 @@ async def get_user_order_active(user_id: int):
                 order = Order.parse_obj(order_data_response)
 
                 for order in order.data:
+                    print(order)
                     final_order_details = []
                     for orderDetails in order.attributes.order_details.data:
                         get_url_orderDetails = f"http://localhost:1338/api/order-details/{orderDetails.id}?populate=*"
@@ -219,7 +223,9 @@ async def get_user_order_active(user_id: int):
                             status=order.attributes.status,
                             total=order.attributes.total,
                             deliveryTime=order.attributes.deliveryTime,
-                            orderDetails=final_order_details)
+                            orderDetails=final_order_details,
+                            location=order.attributes.location
+                        )
 
                         user_order.append(final_order)
 
@@ -233,66 +239,29 @@ async def get_user_order_completed(user_id: int):
     return JSONResponse(content=json_compatible_item_data)
 
 
-@app.get("/medigear-iosApp/get/pdf")
-async def generate_order_pdf(user_id: int):
-    response = await get_active_orders(user_id=user_id)
-    if len(response) == 0:
-        raise HTTPException(
-            status_code=404, detail="Not found")
-    else:
-        order_data_response = response
-        logging.debug(order_data_response)
+def create_pdf(html_content):
+    # Find the tag that determines the page break
+    page_break_tag = '<div class="newPage"></div>'
 
-        order_data = ""
-        for orders_info in order_data_response:
-            order_data += f"""
-                <h3>ID Mandamiento de pago mh.gob.sv: {orders_info.id}</h3>
-                <h3>Numero de referencia con MediGear: #{orders_info.orderReference }</h3>
-                <h3>Total: ${orders_info.total}</h3>
-                <h3>Fecha de entrega: {orders_info.deliveryTime}</h3>
-                <h1>====================================================</h1>
-            """
+    # Split the HTML content by the page break tag
+    content_pages = html_content.split(page_break_tag)
 
-        html = f"""
-                <!DOCTYPE html>
-                <html lang="en">
-                <head>
-                <meta charset="UTF-8">
-                <meta http-equiv="X-UA-Compatible" content="IE=edge">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Document</title>
-                </head>
+    # Create a list to store the paths of temporary HTML files
+    temp_html_files = []
 
-                <body>
-                    <h1>Comprobante de ordernes:</h1>
-                    <h2>Lista de ordenes completadas</h2>
-                    <h1>====================================================</h1>
-                    {order_data}
-                </body>
+    try:
+        # Iterate over the content pages
+        for i, page_content in enumerate(content_pages):
+            # Create a temporary HTML file for each page
+            temp_html_file = f'temp_page_{i}.html'
+            temp_html_files.append(temp_html_file)
 
-                </html>
-            """
+            # Append the page content to the temporary HTML file
+            with open(temp_html_file, 'w') as file:
+                file.write(page_content)
 
-        with open("invoice.html", "w") as file:
-            file.write(html)
-
-        logging.debug("HTML")
-        pdfkit.from_file('invoice.html', 'user-invoice.pdf')
-
-        logging.debug("PDF")
-        # get the current working directory
-        cwd = os.getcwd()
-
-        # define the path to the file relative to the current directory
-        file_path = "/user-invoice.pdf"
-
-        # get the absolute path of the file
-        user_absolute_path = os.path.abspath(file_path)
-
-        # get the relative path of the file from the current working directory
-        user_invoice_relative_path = os.path.relpath(user_absolute_path, cwd)
-
-        # read the contents of the PDF file
+        # Convert each temporary HTML file to a PDF page
+        pdfkit.from_file(temp_html_files, 'user-invoice.pdf')
         with open("user-invoice.pdf", "rb") as file:
             pdf_contents = file.read()
 
@@ -303,6 +272,175 @@ async def generate_order_pdf(user_id: int):
         response["pdf"] = pdf_base64
         logging.debug(pdf_base64)
 
-    json_compatible_item_data = jsonable_encoder(response)
-    logging.debug("response")
-    return JSONResponse(content=json_compatible_item_data)
+        json_compatible_item_data = jsonable_encoder(response)
+        logging.debug("response")
+        return JSONResponse(content=json_compatible_item_data)
+
+    finally:
+        # Clean up the temporary HTML files
+        for temp_html_file in temp_html_files:
+            os.remove(temp_html_file)
+
+
+async def get_user_data(user_id):
+    user_get_url = f"http://localhost:1338/api/users/{user_id}"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(user_get_url, headers=headers) as response:
+            user_data_reponse = await response.json()
+            return user_data_reponse
+
+
+@app.get("/medigear-iosApp/get/pdf")
+async def generate_order_pdf(user_id: int):
+    response = await get_active_orders(user_id=user_id)
+    user_data_reponse = await get_user_data(user_id=user_id)
+    if len(response) == 0:
+        raise HTTPException(
+            status_code=404, detail="Not found")
+    else:
+        user_data = User.parse_obj(user_data_reponse)
+        order_data_response = response
+        logging.debug(order_data_response)
+
+        invoice_data = ""
+        invoice_order_details_data = ""
+        total = 0.0
+        invoice_details = []
+
+        for order_info in order_data_response:
+            for order_details in order_info.orderDetails:
+                invoice_order_details_data += f"""
+                 <tr>
+                    <td style="vertical-align: top"><br />{order_details.quantity}</td>
+                     <td style="vertical-align: top"><br />{order_details.product.data.attributes.name}</td>
+                    <td style="vertical-align: top"><br />${order_details.product.data.attributes.price}</td>
+                     <td style="vertical-align: top"><br />$0.00</td>
+                    <td style="vertical-align: top"><br />$0.00</td>
+                    <td style="vertical-align: top"><br />${(float(order_details.product.data.attributes.price) * order_details.quantity)}</td>
+                </tr>
+                
+                """
+                total += float(
+                    order_details.product.data.attributes.price) * order_details.quantity
+
+            invoice_data_details = OrderTotal(
+                html=invoice_order_details_data, total=total)
+            invoice_details.append(invoice_data_details)
+            invoice_order_details_data = ""
+            total = 0.0
+
+        for orders_info in order_data_response:
+            for invoices in invoice_details:
+                invoice_data += f"""
+                    <div class="container">
+                        <table class="header" style="text-align: left; width: 457px; height: 144px" border="1" cellpadding="2"
+                        cellspacing="2">
+                        <tbody>
+                            <tr>
+                            <td style="vertical-align: top">MEDIGEAR S.A. DE C.V. <br /></td>
+                            <td style="vertical-align: top" width="35%">C.FACTURA</td>
+                            </tr>
+                            <tr>
+                            <td style="vertical-align: top">
+                                Adquisicion de Equipos Medicos y Más
+                            </td>
+                            <td style="vertical-align: top"><br />#{orders_info.orderReference}</td>
+                            </tr>
+                            <tr>
+                            <td style="vertical-align: top">
+                                Tel. 2258-9635; * 71289031 <br />
+                            </td>
+                            <td style="vertical-align: top">NIT: 0614-011523-135-0</td>
+                            </tr>
+                            <tr>
+                            <td style="vertical-align: top">ventas@medigear.com.sv</td>
+                            <td style="vertical-align: top">NRC: 316585-5</td>
+                            </tr>
+                        </tbody>
+                        </table>
+                        <table style="text-align: left; width: 457px; height: 95px" border="1" cellpadding="2" cellspacing="2">
+                        <tbody>
+                            <tr>
+                            <td style="vertical-align: top" width="15% ">Cliente:</td>
+                            <td style="vertical-align: top" width="40%">{user_data.fullName}</td>
+                            <td style="vertical-align: top" width="15% ">Fecha:</td>
+                            <td style="vertical-align: top"><br />{orders_info.deliveryTime}</td>
+                            </tr>
+                            <tr>
+                            <td style="vertical-align: top" width="10% ">Direccion:</td>
+                            <td colspan="3" rowspan="1"><br />{orders_info.location}</td>
+                        </tbody>
+                        </table>
+
+                        <table style="text-align: left; width: 456px; height: 284px" border="1" cellpadding="2" cellspacing="2">
+                        <tbody>
+                            <tr>
+                            <td style="vertical-align: top">CANT<br /></td>
+                            <td style="vertical-align: top">Producto<br /></td>
+                            <td style="vertical-align: top">PRECIO c/u<br /></td>
+                            <td style="vertical-align: top">Ventas no Sujetas<br /></td>
+                            <td style="vertical-align: top">Ventas Exentas<br /></td>
+                            <td style="vertical-align: top">Ventas Afectas<br /></td>
+                            </tr>
+
+                            {invoices.html}
+
+
+                            <tr>
+                            <td colspan="4" rowspan="4" style="vertical-align: top"><br /></td>
+                            <td style="vertical-align: top">SUMAS<br /></td>
+                            <td style="vertical-align: top"><br /> ${invoices.total}</td>
+                            </tr>
+                            <tr>
+                            <td style="vertical-align: top">IVA RET<br /></td>
+                            <td style="vertical-align: top"><br />$0.00</td>
+                            </tr>
+                            <tr>
+                            <td style="vertical-align: top">SUBTOTAL<br /></td>
+                            <td style="vertical-align: top"><br />${invoices.total}</td>
+                            </tr>
+                            <tr>
+                            <td style="vertical-align: top">VENTA n/s<br /></td>
+                            <td style="vertical-align: top"><br />$0.00</td>
+                            </tr>
+                            <tr>
+                            <td colspan="3" rowspan="1" style="vertical-align: top">
+                                Dado en <br />
+                            </td>
+                            <td style="vertical-align: top"><br /></td>
+                            <td style="vertical-align: top">VENTA Ex<br /></td>
+                            <td style="vertical-align: top"><br />$0.00</td>
+                            </tr>
+                            <tr>
+                            <td colspan="3" rowspan="1" style="vertical-align: top">
+                                Manufacturado por <br />
+                            </td>
+                            <td style="vertical-align: top"><br />MediGear Asesor</td>
+                            <td style="vertical-align: top">Total <br /></td>
+                            <td style="vertical-align: top"><br />${invoices.total}</td>
+                            </tr>
+                        </tbody>
+                        </table>
+                        <br />
+                        <div class="newPage"></div>
+                    </div>
+                """
+
+    html = f"""
+                <!DOCTYPE html>
+                <html lang="en">
+                <head>
+                <meta charset="UTF-8">
+                <meta http-equiv="X-UA-Compatible" content="IE=edge">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Document</title>
+                </head>
+
+                <body
+                    {invoice_data}
+                </body>
+
+                </html>
+            """
+
+    return create_pdf(html_content=html)
