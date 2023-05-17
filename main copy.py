@@ -270,10 +270,33 @@ async def generate_order_pdf(user_id: int):
         invoice_data_set = []
 
         for order_info in order_data_response:
-            # Header
-            invoice_data += f"""
-                <div class="container">
-                    <table class="header" style="text-align: left; width: 457px; height: 144px" border="1" cellpadding="2"
+            for order_details in order_info.orderDetails:
+                total += float(
+                    order_details.product.data.attributes.price) * order_details.quantity
+                invoice_order_details_data += f"""
+                 <tr>
+                    <td style="vertical-align: top"><br />{order_details.quantity}</td>
+                     <td style="vertical-align: top"><br />{order_details.product.data.attributes.name}</td>
+                    <td style="vertical-align: top"><br />${order_details.product.data.attributes.price}</td>
+                     <td style="vertical-align: top"><br />$0.00</td>
+                    <td style="vertical-align: top"><br />$0.00</td>
+                    <td style="vertical-align: top"><br />${total}</td>
+                </tr>
+                
+                """
+            order_total = OrderTotal(
+                id=order_info.orderReference, html=invoice_order_details_data, total=total)
+
+            invoice_details.append(order_total)
+            invoice_order_details_data = ""
+            total = 0.0
+
+        logging.debug(len(invoice_details))
+        for orders_info in order_data_response:
+            for invoices in orders_info.orderDetails:
+                invoice_data += f"""
+                    <div class="container">
+                        <table class="header" style="text-align: left; width: 457px; height: 144px" border="1" cellpadding="2"
                         cellspacing="2">
                         <tbody>
                             <tr>
@@ -284,7 +307,7 @@ async def generate_order_pdf(user_id: int):
                             <td style="vertical-align: top">
                                 Adquisicion de Equipos Medicos y Más
                             </td>
-                            <td style="vertical-align: top"><br />No. {order_info.id}</td>
+                            <td style="vertical-align: top"><br />No. {orders_info.id}</td>
                             </tr>
                             <tr>
                             <td style="vertical-align: top">
@@ -297,104 +320,87 @@ async def generate_order_pdf(user_id: int):
                             <td style="vertical-align: top">NRC: 316585-5</td>
                             </tr>
                         </tbody>
-                    </table>
-
-
-                    <table style="text-align: left; width: 456px; height: 95px" border="1" cellpadding="2" cellspacing="2">
+                        </table>
+                        <table style="text-align: left; width: 457px; height: 95px" border="1" cellpadding="2" cellspacing="2">
                         <tbody>
                             <tr>
-                                <td style="vertical-align: top" width="15% ">Cliente:</td>
-                                <td style="vertical-align: top" width="40%">{user_data.fullName}</td>
-                                <td style="vertical-align: top" width="15% ">Fecha:</td>
-                                <td style="vertical-align: top"><br />{order_info.deliveryTime}</td>
+                            <td style="vertical-align: top" width="15% ">Cliente:</td>
+                            <td style="vertical-align: top" width="40%">{user_data.fullName}</td>
+                            <td style="vertical-align: top" width="15% ">Fecha:</td>
+                            <td style="vertical-align: top"><br />{orders_info.deliveryTime}</td>
                             </tr>
                             <tr>
                             <td style="vertical-align: top" width="10% ">Direccion:</td>
-                            <td colspan="3" rowspan="1"><br />{order_info.location}</td>
+                            <td colspan="3" rowspan="1"><br />{orders_info.location}</td>
                         </tbody>
-                    </table>
+                        </table>
 
-                    <table style="text-align: left; width: 456px; height: 284px" border="1" cellpadding="2" cellspacing="2">
+                        <table style="text-align: left; width: 456px; height: 284px" border="1" cellpadding="2" cellspacing="2">
                         <tbody>
-                                <tr>
-                                    <td style="vertical-align: top">CANT<br /></td>
-                                    <td style="vertical-align: top">Producto<br /></td>
-                                    <td style="vertical-align: top">PRECIO c/u<br /></td>
-                                    <td style="vertical-align: top">Ventas no Sujetas<br /></td>
-                                    <td style="vertical-align: top">Ventas Exentas<br /></td>
-                                    <td style="vertical-align: top">Ventas Afectas<br /></td>
-                                </tr>
-            """
-            for order_details in order_info.orderDetails:
-                # Details n
-                total += float(
-                    order_details.product.data.attributes.price) * order_details.quantity
-                invoice_data += f"""
-                        <tr>
-                            <td style="vertical-align: top"><br />{order_details.quantity}</td>
-                            <td style="vertical-align: top"><br />{order_details.product.data.attributes.name}</td>
-                            <td style="vertical-align: top"><br />${order_details.product.data.attributes.price}</td>
-                            <td style="vertical-align: top"><br />$0.00</td>
-                            <td style="vertical-align: top"><br />$0.00</td>
-                            <td style="vertical-align: top"><br />${total}</td>
-                        </tr>
+                            <tr>
+                            <td style="vertical-align: top">CANT<br /></td>
+                            <td style="vertical-align: top">Producto<br /></td>
+                            <td style="vertical-align: top">PRECIO c/u<br /></td>
+                            <td style="vertical-align: top">Ventas no Sujetas<br /></td>
+                            <td style="vertical-align: top">Ventas Exentas<br /></td>
+                            <td style="vertical-align: top">Ventas Afectas<br /></td>
+                            </tr>
 
-                """
-                total = 0.0
-            # order_total = OrderTotal(
-            #     id=order_info.orderReference, html=invoice_order_details_data, total=total)
+                            {invoices.html}
 
-            # invoice_details.append(order_total)
-         # Footer
-            invoice_data += f"""
-                        <tr>
+                            <tr>
                             <td colspan="4" rowspan="4" style="vertical-align: top"><br /></td>
-                                <td style="vertical-align: top">SUMAS<br /></td>
-                                <td style="vertical-align: top"><br />${order_info.total}</td>
-                        </tr>
-                        <tr>
+                            <td style="vertical-align: top">SUMAS<br /></td>
+                            <td style="vertical-align: top"><br />${invoices.total}</td>
+                            </tr>
+                            <tr>
                             <td style="vertical-align: top">IVA RET<br /></td>
                             <td style="vertical-align: top"><br />$0.00</td>
-                        </tr>
-                        <tr>
+                            </tr>
+                            <tr>
                             <td style="vertical-align: top">SUBTOTAL<br /></td>
-                            <td style="vertical-align: top"><br />${order_info.total}</td>
-                        </tr>
-                        <tr>
+                            <td style="vertical-align: top"><br />${invoices.total}</td>
+                            </tr>
+                            <tr>
                             <td style="vertical-align: top">VENTA n/s<br /></td>
                             <td style="vertical-align: top"><br />$0.00</td>
                             </tr>
-                        <tr>
+                            <tr>
                             <td colspan="3" rowspan="1" style="vertical-align: top">
-                                Emitido en <br />
+                                Dado en <br />
                             </td>
-                            <td style="vertical-align: top"><br />San Salvador</td>
+                            <td style="vertical-align: top"><br /></td>
                             <td style="vertical-align: top">VENTA Ex<br /></td>
                             <td style="vertical-align: top"><br />$0.00</td>
                             </tr>
-                        <tr>
+                            <tr>
                             <td colspan="3" rowspan="1" style="vertical-align: top">
-                                            Manufacturado por <br />
+                                Manufacturado por <br />
                             </td>
-                            <td style="vertical-align: top"><br />Asesor MediGear</td>
+                            <td style="vertical-align: top"><br /></td>
                             <td style="vertical-align: top">Total <br /></td>
-                            <td style="vertical-align: top"><br />${order_info.total}</td>
-                        </tr>             
-                    </tbody>
-                </table>
-                <br />
-                <div class="newPage"></div></div>
+                            <td style="vertical-align: top"><br />${orders_info.total}</td>
+                            </tr>
+                            
+                        </tbody>
+                        </table>
+                        <br />
+                        <div class="newPage"></div>
+                    </div>
                 """
-        # page
-        invoice_details.append(invoice_data)
-        invoice_data = ""
+            invoice_data_set.append(invoice_data)
+            invoice_data = ""
 
-    # pages_array
+        # invoice_obj = InvoiceData(
+        #     id=orders_info.orderReference, html=invoice_data)
 
-    logging.debug(len(invoice_details))
+    # invoice_non_repeted_content = ""
+    # unique_items = list({item.id: item for item in invoice_data_set}.values())
+
+    logging.debug(len(invoice_data_set))
     htmls_generated = []
     html = ""
-    for invoice_info in invoice_details:
+    for invoice_info in invoice_data_set:
         html += f"""
                 <!DOCTYPE html class="newhtml">
                     <html lang="en">
